@@ -12,26 +12,43 @@
     <style>
         /* Print Styles */
         @media print {
-            @page { margin: 0; size: auto; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white; }
+            /* CRITICAL FIX 1: Maximize content area by reducing margins */
+            @page { 
+                margin: 0.5cm; /* Reduced from 0 */
+                size: auto; 
+            }
+            body { 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact; 
+                background-color: white; 
+                /* Force body padding to zero in print mode */
+                padding: 0 !important; 
+                margin: 0 !important; 
+                overflow: hidden;
+            }
             .no-print { display: none !important; }
             
-            /* FIX 1: Force the main container to be flex and stay on one page/height */
+            /* CRITICAL FIX 2 & 3: Force single-page layout with scaling */
             #preview-container { 
                 display: flex !important; 
-                width: 100%; 
-                max-width: none; 
+                width: 100vw;
+                max-width: 100vw !important; 
                 box-shadow: none;
                 margin: 0;
-                height: 100vh !important; /* Try to fit content into viewport height */
+                padding: 0;
+                /* Aggressively scale down the content to ensure it fits A4 height/width */
+                transform: scale(0.85); 
+                transform-origin: top left; /* Scale from the top-left corner */
             }
             
-            /* FIX 2: Ensure columns print side-by-side without shrinking */
+            /* Ensure columns print side-by-side without shrinking */
             .print-column {
                 flex-shrink: 0; 
+                box-sizing: border-box;
+                padding: 30px !important; /* Slightly reduced padding for print */
             }
-            
-            /* FIX 3: Universal property to prevent breaks inside critical elements */
+
+            /* Universal property to prevent breaks inside critical elements */
             .break-avoid {
                 break-inside: avoid !important;
                 -webkit-column-break-inside: avoid !important;
@@ -903,7 +920,7 @@
 
             container.innerHTML = `
                 <!-- LEFT COLUMN (SIDEBAR) -->
-                <div class="w-full md:w-1/3 bg-[#1e2a3a] text-white p-8 md:p-10 flex flex-col gap-10 print:w-1/3 print:h-screen print-column">
+                <div class="w-full md:w-1/3 bg-[#1e2a3a] text-white p-8 md:p-10 flex flex-col gap-10 print:w-1/3 print:h-full print-column">
                     <!-- Profile Picture -->
                     <div class="flex justify-center mb-2">
                         <div class="w-48 h-48 rounded-full border-[6px] border-white/20 overflow-hidden relative shadow-lg">
@@ -1029,7 +1046,6 @@
         </div>
 
         <!-- PREVIEW SECTION (Hidden by default) -->
-        <!-- Added min-h-[297mm] (approx A4 height) and md:h-full to help browser calculate print height better -->
         <div id="preview-container" class="hidden w-full max-w-[1000px] bg-white shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-200 min-h-[297mm] md:h-full">
             <!-- Content injected by JS -->
         </div>

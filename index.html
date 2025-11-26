@@ -14,21 +14,23 @@
         @media print {
             /* CRITICAL FIX 1: Maximize content area by reducing margins */
             @page { 
-                margin: 0.5cm; /* Reduced from 0 */
+                margin: 0.5cm !important; /* Re-confirming small margin */
                 size: auto; 
+            }
+            body, html { 
+                /* Zero out all external space */
+                padding: 0 !important; 
+                margin: 0 !important; 
+                overflow: hidden;
             }
             body { 
                 -webkit-print-color-adjust: exact; 
                 print-color-adjust: exact; 
                 background-color: white; 
-                /* Force body padding to zero in print mode */
-                padding: 0 !important; 
-                margin: 0 !important; 
-                overflow: hidden;
             }
             .no-print { display: none !important; }
             
-            /* CRITICAL FIX 2 & 3: Force single-page layout with scaling */
+            /* CRITICAL FIX 2 & 3: Force single-page layout with aggressive scaling */
             #preview-container { 
                 display: flex !important; 
                 width: 100vw;
@@ -36,8 +38,8 @@
                 box-shadow: none;
                 margin: 0;
                 padding: 0;
-                /* Aggressively scale down the content to ensure it fits A4 height/width */
-                transform: scale(0.85); 
+                /* AGGRESSIVELY scale down the content to ensure it fits A4 height/width (shrunk by 20%) */
+                transform: scale(0.80); 
                 transform-origin: top left; /* Scale from the top-left corner */
             }
             

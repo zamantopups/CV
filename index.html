@@ -65,16 +65,19 @@
         window.exportData = exportData;
         window.handleImport = handleImport;
         window.autoGeneratePoints = autoGeneratePoints;
-        window.updateAutoKeyButtonState = updateAutoKeyButtonState; // <--- NEW FUNCTION EXPOSED
+        window.updateAutoKeyButtonState = updateAutoKeyButtonState;
+        window.handlePhotoUpload = handlePhotoUpload; // <--- NEW FUNCTION EXPOSED
 
         // --- INITIAL DATA ---
+        const defaultPlaceholderImage = "https://placehold.co/600x600/e2e8f0/334155?text=Upload+Photo";
         const defaultData = {
             personal: {
                 firstName: "Richard",
                 lastName: "Sanchez",
                 title: "Marketing Manager",
                 summary: "This is a brief professional summary. Click the Edit tab to customize this content. All data is saved directly in your browser's Local Storage.",
-                photoUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-1.2.1&auto=format&fit=crop&w=634&q=80"
+                // Store photo as Base64 Data URL or a placeholder URL
+                photoUrl: defaultPlaceholderImage 
             },
             contact: {
                 phone: "+123-456-7890",
@@ -127,6 +130,35 @@
                     }
                 }
             }
+        }
+
+        /**
+         * Converts the uploaded file to a Base64 Data URL and saves it to the data model.
+         */
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // Update the photoUrl with the Base64 string
+                data.personal.photoUrl = e.target.result;
+                showMessageBox("Photo uploaded successfully!", 'success');
+                renderEditor(); // Re-render to show the new thumbnail
+            };
+            reader.onerror = function() {
+                showMessageBox("Error reading file.", 'error');
+            };
+            
+            // Check file size (e.g., limit to 1MB to keep Base64 small)
+            if (file.size > 1024 * 1024) {
+                 showMessageBox("File size exceeds 1MB limit. Please choose a smaller image.", 'error');
+                 // Clear the file input so the same file can be selected again
+                 event.target.value = ''; 
+                 return;
+            }
+
+            reader.readAsDataURL(file);
         }
 
         /**
@@ -281,6 +313,10 @@
 
                 if (resumeJson && selected) {
                     data = JSON.parse(resumeJson);
+                    // Ensure a photoUrl exists for safety, defaulting if missing
+                    if (!data.personal.photoUrl) {
+                        data.personal.photoUrl = defaultPlaceholderImage;
+                    }
                     currentResumeId = id;
                     showMessageBox(`CV Loaded: ${selected.name}`, 'info');
                     renderEditor();
@@ -591,6 +627,8 @@
             const currentName = currentResumeId ? savedResumes.find(r => r.id === currentResumeId)?.name || 'Untitled CV' : 'New/Unsaved CV';
             const saveButtonText = currentResumeId ? 'Update Current CV' : 'Save New CV';
             const saveButtonClass = currentResumeId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700';
+            const currentPhotoSrc = data.personal.photoUrl || defaultPlaceholderImage;
+
 
             let html = `
                 <!-- Save/Load Panel -->
@@ -650,7 +688,22 @@
                         ${inputField('First Name', data.personal.firstName, "updateData('personal.firstName', this.value)")}
                         ${inputField('Last Name', data.personal.lastName, "updateData('personal.lastName', this.value)")}
                         ${inputField('Job Title', data.personal.title, "updateData('personal.title', this.value)", "md:col-span-2")}
-                        ${inputField('Photo URL', data.personal.photoUrl, "updateData('personal.photoUrl', this.value)", "md:col-span-2")}
+                        
+                        <!-- PHOTO UPLOAD FIELD -->
+                        <div class="md:col-span-2 flex items-center gap-4">
+                            <div class="flex-shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-slate-300">
+                                <img id="photo-preview" src="${currentPhotoSrc}" onerror="this.src='${defaultPlaceholderImage}'" alt="Photo Preview" class="w-full h-full object-cover">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Profile Photo (Max 1MB)</label>
+                                <label for="photo-upload" class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-500 hover:bg-blue-600 transition-colors">
+                                    <i data-lucide="image" class="w-4 h-4 mr-2"></i> Upload Photo
+                                </label>
+                                <input type="file" id="photo-upload" accept="image/*" onchange="handlePhotoUpload(event)" class="hidden">
+                            </div>
+                        </div>
+                        <!-- END PHOTO UPLOAD FIELD -->
+
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium text-slate-700 mb-1">Profile Summary</label>
                             <textarea oninput="updateData('personal.summary', this.value)" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all h-24">${data.personal.summary}</textarea>
@@ -681,7 +734,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 pr-8">
                                 ${inputField('Company', job.company, `updateArrayItem('experience', ${idx}, 'company', this.value)`)}
                                 ${inputField('Period', job.period, `updateArrayItem('experience', ${idx}, 'period', this.value)`)}
-                                <!-- FIX: Added updateAutoKeyButtonState to prevent re-render and loss of focus -->
+                                <!-- Focus FIX: updateAutoKeyButtonState prevents full re-render here -->
                                 ${inputField('Role', job.role, `updateArrayItem('experience', ${idx}, 'role', this.value); updateAutoKeyButtonState(${idx}, this.value);`, 'md:col-span-2')}
                             </div>
                             <div class="space-y-2">
@@ -839,7 +892,8 @@
                     <!-- Profile Picture -->
                     <div class="flex justify-center mb-2">
                         <div class="w-48 h-48 rounded-full border-[6px] border-white/20 overflow-hidden relative shadow-lg">
-                            <img src="${data.personal.photoUrl}" onerror="this.src='https://via.placeholder.com/150'" alt="Profile" class="w-full h-full object-cover"/>
+                            <!-- Uses Base64 data from upload or the placeholder URL -->
+                            <img src="${data.personal.photoUrl}" onerror="this.src='${defaultPlaceholderImage}'" alt="Profile" class="w-full h-full object-cover"/>
                         </div>
                     </div>
 

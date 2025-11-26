@@ -15,14 +15,29 @@
             @page { margin: 0; size: auto; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background-color: white; }
             .no-print { display: none !important; }
+            
+            /* FIX 1: Force the main container to be flex and stay on one page/height */
             #preview-container { 
-                display: block !important; 
+                display: flex !important; 
                 width: 100%; 
                 max-width: none; 
                 box-shadow: none;
                 margin: 0;
+                height: 100vh !important; /* Try to fit content into viewport height */
             }
-            #editor-container { display: none !important; }
+            
+            /* FIX 2: Ensure columns print side-by-side without shrinking */
+            .print-column {
+                flex-shrink: 0; 
+            }
+            
+            /* FIX 3: Universal property to prevent breaks inside critical elements */
+            .break-avoid {
+                break-inside: avoid !important;
+                -webkit-column-break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
             /* Ensure background colors print */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
@@ -66,7 +81,7 @@
         window.handleImport = handleImport;
         window.autoGeneratePoints = autoGeneratePoints;
         window.updateAutoKeyButtonState = updateAutoKeyButtonState;
-        window.handlePhotoUpload = handlePhotoUpload; // <--- NEW FUNCTION EXPOSED
+        window.handlePhotoUpload = handlePhotoUpload; 
 
         // --- INITIAL DATA ---
         const defaultPlaceholderImage = "https://placehold.co/600x600/e2e8f0/334155?text=Upload+Photo";
@@ -851,7 +866,7 @@
             
             // Generate Education
             const eduHtml = data.education.map(edu => `
-                <div>
+                <div class="break-avoid">
                     <div class="text-lg font-semibold mb-1">${edu.year}</div>
                     <div class="font-medium text-white/90 uppercase">${edu.school}</div>
                     <div class="text-sm font-light text-white/70 mt-1">${edu.degree}</div>
@@ -861,7 +876,7 @@
 
             // Generate Experience
             const expHtml = data.experience.map(job => `
-                <div class="relative pl-8 md:pl-12 break-inside-avoid">
+                <div class="relative pl-8 md:pl-12 break-inside-avoid break-avoid">
                     <div class="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-slate-600 border-4 border-white shadow-sm"></div>
                     <div class="flex flex-col sm:flex-row sm:justify-between sm:items-baseline mb-1">
                         <h4 class="text-lg font-bold text-slate-800">${job.company}</h4>
@@ -876,7 +891,7 @@
 
             // Generate References
             const refHtml = data.references.map(ref => `
-                <div>
+                <div class="break-avoid">
                     <div class="font-bold text-lg text-slate-800">${ref.name}</div>
                     <div class="text-slate-500 font-medium">${ref.title}</div>
                     <div class="mt-2 text-sm text-slate-600">
@@ -888,7 +903,7 @@
 
             container.innerHTML = `
                 <!-- LEFT COLUMN (SIDEBAR) -->
-                <div class="w-full md:w-1/3 bg-[#1e2a3a] text-white p-8 md:p-10 flex flex-col gap-10 print:w-1/3 print:h-screen">
+                <div class="w-full md:w-1/3 bg-[#1e2a3a] text-white p-8 md:p-10 flex flex-col gap-10 print:w-1/3 print:h-screen print-column">
                     <!-- Profile Picture -->
                     <div class="flex justify-center mb-2">
                         <div class="w-48 h-48 rounded-full border-[6px] border-white/20 overflow-hidden relative shadow-lg">
@@ -898,7 +913,7 @@
                     </div>
 
                     <!-- CONTACT -->
-                    <section>
+                    <section class="break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Contact</h3>
                         <div class="flex flex-col gap-4 text-sm font-light tracking-wide">
                             <div class="flex items-center gap-3">
@@ -921,28 +936,28 @@
                     </section>
 
                     <!-- EDUCATION -->
-                    <section>
+                    <section class="break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Education</h3>
                         <div class="flex flex-col gap-6">${eduHtml}</div>
                     </section>
 
                     <!-- SKILLS -->
-                    <section>
+                    <section class="break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Skills</h3>
                         <ul class="flex flex-col gap-3 text-sm font-light list-disc pl-4 marker:text-white/50">${skillsHtml}</ul>
                     </section>
 
                     <!-- LANGUAGES -->
-                    <section>
+                    <section class="break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Languages</h3>
                         <ul class="flex flex-col gap-3 text-sm font-light list-disc pl-4 marker:text-white/50">${langsHtml}</ul>
                     </section>
                 </div>
 
                 <!-- RIGHT COLUMN (MAIN CONTENT) -->
-                <div class="w-full md:w-2/3 bg-white p-8 md:p-12 text-slate-800 print:w-2/3">
+                <div class="w-full md:w-2/3 bg-white p-8 md:p-12 text-slate-800 print:w-2/3 print-column">
                     <!-- HEADER -->
-                    <header class="mb-12 mt-4">
+                    <header class="mb-12 mt-4 break-avoid">
                         <h1 class="text-5xl md:text-6xl font-bold text-slate-700 uppercase tracking-tight mb-2">
                             ${data.personal.firstName} <span class="font-light text-slate-600">${data.personal.lastName}</span>
                         </h1>
@@ -951,13 +966,13 @@
                     </header>
 
                     <!-- PROFILE -->
-                    <section class="mb-10">
+                    <section class="mb-10 break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-5 border-b-2 border-slate-200 pb-2 inline-block w-full">Profile</h3>
                         <p class="text-slate-600 leading-relaxed text-justify whitespace-pre-wrap">${data.personal.summary}</p>
                     </section>
 
                     <!-- WORK EXPERIENCE -->
-                    <section class="mb-10">
+                    <section class="mb-10 break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-8 border-b-2 border-slate-200 pb-2 inline-block w-full">Work Experience</h3>
                         <div class="relative border-l-2 border-slate-300 ml-3 md:ml-4 space-y-10 pb-2">
                             ${expHtml}
@@ -965,7 +980,7 @@
                     </section>
 
                     <!-- REFERENCES -->
-                    <section class="break-inside-avoid">
+                    <section class="break-avoid">
                         <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-6 border-b-2 border-slate-200 pb-2 inline-block w-full">Reference</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">${refHtml}</div>
                     </section>
@@ -1014,7 +1029,8 @@
         </div>
 
         <!-- PREVIEW SECTION (Hidden by default) -->
-        <div id="preview-container" class="hidden w-full max-w-[1000px] bg-white shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-200">
+        <!-- Added min-h-[297mm] (approx A4 height) and md:h-full to help browser calculate print height better -->
+        <div id="preview-container" class="hidden w-full max-w-[1000px] bg-white shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-200 min-h-[297mm] md:h-full">
             <!-- Content injected by JS -->
         </div>
 

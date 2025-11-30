@@ -13,7 +13,7 @@
         }
         /* Custom styles to mimic the dark column and paper look */
         .cv-container {
-            /* CORRECTED: A4 size (21.0cm x 29.7cm) */
+            /* A4 size (21.0cm x 29.7cm) */
             width: 21.0cm; 
             min-height: 29.7cm; 
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -60,21 +60,7 @@
             color: #384252;
         }
         
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.9);
-            z-index: 50;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
+        /* The loading overlay is now removed as we don't connect to Firebase */
         
         /* PRINT STYLES: Ensure only the CV container is visible and styled for A4 */
         @media print {
@@ -107,14 +93,7 @@
 </head>
 <body class="p-4 lg:p-8">
 
-    <!-- Loading Indicator -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p class="mt-4 text-gray-700">Connecting to database...</p>
-    </div>
+    <!-- Removed Loading Indicator - Data now loads instantly from localStorage -->
 
     <div class="max-w-7xl mx-auto flex flex-col lg:flex-row space-y-6 lg:space-y-0 lg:space-x-6">
         
@@ -192,28 +171,17 @@
 
     </div>
 
-    <!-- Firebase Imports and Setup -->
+    <!-- Application Script -->
     <script type="module">
-        import { initializeApp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+        
         // --- GLOBAL CONFIGS AND INITIALIZATION ---
-        setLogLevel('error');
         
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        
-        let userId = null;
-        let isAuthReady = false;
         let cvData = {};
         let saveTimeout;
         let currentView = 'editor'; // Track current state for mobile
+
+        // Define the key for localStorage
+        const STORAGE_KEY = 'cvBuilderData';
 
         // Default CV Structure
         const defaultCV = {
@@ -263,20 +231,22 @@
             imageUrl: ""
         };
 
-        // --- FIREBASE HELPER ---
-        const getCvDocRef = (userId) => doc(db, 'artifacts', appId, 'users', userId, 'cvData', 'data');
+        // --- DATA BINDING & PERSISTENCE (using localStorage) ---
 
-        // --- DATA BINDING & PERSISTENCE ---
-
-        // Debounced save function
+        // Debounced save function to store data in localStorage
         function debounceSave(data) {
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(() => {
-                if (userId && isAuthReady) {
-                    setDoc(getCvDocRef(userId), data, { merge: true })
-                        .catch(err => console.error("Error saving data:", err));
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                    // console.log("Data saved to localStorage.");
+                } catch (err) {
+                    console.error("Error saving data to localStorage:", err);
                 }
-            }, 500); // Wait 500ms after last input before saving
+                // Re-render CV after saving data to ensure immediate UI update
+                renderForm(cvData);
+                renderCV(cvData);
+            }, 300); // Wait 300ms after last input before saving
         }
 
         // Handle general input changes (non-array fields)
@@ -299,11 +269,14 @@
 
         // Handle array item changes (skills, hobbies, etc.)
         function handleArrayItemChange(type, index, field, value) {
+            if (!cvData[type]) return; // Should not happen if data is initialized
+
             if (field === 'item') {
                 cvData[type][index] = value;
             } else {
                 // For objects in array (like languages/education/workExperience)
                 if (!cvData[type][index]) {
+                    // Initialize structure if somehow missing (safety check)
                     if (type === 'languages') cvData[type][index] = { name: '', proficiency: '' };
                     else if (type === 'education') cvData[type][index] = { degree: '', institution: '', dates: '' };
                     else if (type === 'workExperience') cvData[type][index] = { title: '', company: '', dates: '', bullets: [''] };
@@ -315,17 +288,19 @@
 
         // Handle work experience bullet point changes
         function handleBulletChange(workIndex, bulletIndex, value) {
+            if (!cvData.workExperience?.[workIndex]?.bullets) return;
             cvData.workExperience[workIndex].bullets[bulletIndex] = value;
             debounceSave(cvData);
         }
         
         function addBullet(workIndex) {
+            if (!cvData.workExperience?.[workIndex]?.bullets) return;
             cvData.workExperience[workIndex].bullets.push("");
             debounceSave(cvData);
-            // After saving, the onSnapshot listener will re-render everything
         }
 
         function removeBullet(workIndex, bulletIndex) {
+            if (!cvData.workExperience?.[workIndex]?.bullets) return;
             cvData.workExperience[workIndex].bullets.splice(bulletIndex, 1);
             debounceSave(cvData);
         }
@@ -471,7 +446,7 @@
                     <div class="pt-4 border-t border-gray-600">
                         <h3 class="text-xl font-bold mb-3 text-white">SKILLS</h3>
                         <ul class="list-disc ml-4 space-y-1 text-sm">
-                            ${data.skills?.map(s => `<li>${s}</li>`).join('') || '<li>No skills added</li>'}
+                            ${data.skills?.filter(s => s.trim() !== '').map(s => `<li>${s}</li>`).join('') || '<li>No skills added</li>'}
                         </ul>
                     </div>
 
@@ -479,7 +454,7 @@
                     <div class="pt-4 border-t border-gray-600">
                         <h3 class="text-xl font-bold mb-3 text-white">LANGUAGES</h3>
                         <div class="space-y-1">
-                            ${data.languages?.map(l => `
+                            ${data.languages?.filter(l => l.name?.trim() !== '').map(l => `
                                 <p><span class="font-semibold text-accent">${l.name}:</span> ${l.proficiency}</p>
                             `).join('') || '<p>No languages added</p>'}
                         </div>
@@ -489,7 +464,7 @@
                     <div class="pt-4 border-t border-gray-600">
                         <h3 class="text-xl font-bold mb-3 text-white">HOBBIES</h3>
                         <ul class="list-disc ml-4 space-y-1 text-sm">
-                            ${data.hobbies?.map(h => `<li>${h}</li>`).join('') || '<li>No hobbies added</li>'}
+                            ${data.hobbies?.filter(h => h.trim() !== '').map(h => `<li>${h}</li>`).join('') || '<li>No hobbies added</li>'}
                         </ul>
                     </div>
                 </div>
@@ -515,7 +490,7 @@
                                     </div>
                                     <p class="text-sm font-medium italic mb-2">${work.company || 'Company - Country'}</p>
                                     <ul class="list-none ml-0 space-y-1 text-sm">
-                                        ${work.bullets?.map(bullet => `
+                                        ${work.bullets?.filter(b => b.trim() !== '').map(bullet => `
                                             <li class="flex items-start">
                                                 <span class="work-bullet mt-1"></span>
                                                 <span class="flex-1">${bullet}</span>
@@ -565,6 +540,7 @@
         }
 
         window.removeItem = function(type, index) {
+            if (!cvData[type]) return;
             cvData[type].splice(index, 1);
             debounceSave(cvData);
         }
@@ -602,47 +578,32 @@
         }
 
 
-        // --- AUTHENTICATION AND DATA SYNC ---
-        async function initAuthAndData() {
+        // --- DATA INITIALIZATION ---
+        function initData() {
             try {
-                // 1. Authenticate
-                const authPromise = initialAuthToken 
-                    ? signInWithCustomToken(auth, initialAuthToken)
-                    : signInAnonymously(auth);
-
-                await authPromise;
-                userId = auth.currentUser.uid;
-                isAuthReady = true;
-
-                // 2. Set up Real-time Listener (onSnapshot)
-                const docRef = getCvDocRef(userId);
+                // 1. Load data from localStorage
+                const localData = localStorage.getItem(STORAGE_KEY);
                 
-                onSnapshot(docRef, (docSnap) => {
-                    document.getElementById('loadingOverlay').classList.add('hidden');
-                    
-                    if (docSnap.exists()) {
-                        // Data retrieved from Firestore
-                        cvData = { ...defaultCV, ...docSnap.data() };
-                        console.log("Data loaded from Firestore.");
-                    } else {
-                        // No data exists, write default data and use it
-                        console.log("No data found. Saving default CV data.");
-                        cvData = defaultCV;
-                        setDoc(docRef, defaultCV).catch(err => console.error("Error setting default data:", err));
-                    }
-                    
-                    // 3. Render UI with latest data
-                    renderForm(cvData);
-                    renderCV(cvData);
-                }, (error) => {
-                    console.error("Error listening to data:", error);
-                    // Fallback to default data if listener fails
+                if (localData) {
+                    // Data retrieved from localStorage
+                    const parsedData = JSON.parse(localData);
+                    // Merge saved data with default structure for resilience
+                    cvData = { ...defaultCV, ...parsedData, 
+                        contact: {...defaultCV.contact, ...parsedData.contact}
+                    };
+                    // console.log("Data loaded from localStorage.");
+                } else {
+                    // No data exists, use default data
+                    // console.log("No data found. Using default CV data.");
                     cvData = defaultCV;
-                    renderForm(cvData);
-                    renderCV(cvData);
-                    document.getElementById('loadingOverlay').classList.add('hidden');
-                });
+                    // Save default data immediately
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(cvData));
+                }
                 
+                // 2. Render UI with latest data
+                renderForm(cvData);
+                renderCV(cvData);
+
                 // Add listener for all simple inputs
                 document.getElementById('cv-editor-form').addEventListener('input', handleInput);
 
@@ -653,32 +614,16 @@
                 }
 
             } catch (error) {
-                console.error("Authentication or Initialization Error:", error);
-                document.getElementById('loadingOverlay').classList.add('hidden');
-                // Show default data if auth fails completely
+                console.error("Initialization Error:", error);
+                // Fallback to default data if localStorage fails
                 cvData = defaultCV;
                 renderForm(cvData);
                 renderCV(cvData);
             }
         }
 
-        initAuthAndData();
+        window.onload = initData;
 
-    </script>
-    <script>
-        // Use a simple retry mechanism for the fetch call.
-        async function fetchWithRetry(url, options, retries = 3) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return response;
-                } catch (error) {
-                    if (i === retries - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-                }
-            }
-        }
     </script>
 </body>
 </html>

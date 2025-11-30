@@ -3,1060 +3,682 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume Builder (Local Storage & Backup)</title>
-    <!-- Tailwind CSS -->
+    <title>Modern CV Builder</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
-        /* Print Styles */
-        @media print {
-            /* CRITICAL FIX 1: Maximize content area by reducing margins */
-            @page { 
-                margin: 0.5cm !important; /* Re-confirming small margin */
-                size: auto; 
-            }
-            body, html { 
-                /* Zero out all external space */
-                padding: 0 !important; 
-                margin: 0 !important; 
-                overflow: hidden;
-            }
-            body { 
-                -webkit-print-color-adjust: exact; 
-                print-color-adjust: exact; 
-                background-color: white; 
-            }
-            .no-print { display: none !important; }
-            
-            /* CRITICAL FIX 2 & 3: Force single-page layout with aggressive scaling */
-            #preview-container { 
-                display: flex !important; 
-                width: 100vw;
-                max-width: 100vw !important; 
-                box-shadow: none;
-                margin: 0;
-                padding: 0;
-                /* AGGRESSIVELY scale down the content to ensure it fits A4 height/width (shrunk by 20%) */
-                transform: scale(0.80); 
-                transform-origin: top left; /* Scale from the top-left corner */
-            }
-            
-            /* Ensure columns print side-by-side without shrinking */
-            .print-column {
-                flex-shrink: 0; 
-                box-sizing: border-box;
-                padding: 30px !important; /* Slightly reduced padding for print */
-            }
-
-            /* Universal property to prevent breaks inside critical elements */
-            .break-avoid {
-                break-inside: avoid !important;
-                -webkit-column-break-inside: avoid !important;
-                page-break-inside: avoid !important;
-            }
-
-            /* Ensure background colors print */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+        }
+        /* Custom styles to mimic the dark column and paper look */
+        .cv-container {
+            /* CORRECTED: A4 size (21.0cm x 29.7cm) */
+            width: 21.0cm; 
+            min-height: 29.7cm; 
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background-color: white;
+            display: grid;
+            grid-template-columns: 35% 65%; /* Two-column layout ratio from image */
         }
 
-        /* Custom scrollbar for better UX */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .dark-column {
+            background-color: #384252; /* Darker blue/grey */
+            color: white;
+        }
+
+        .main-column h2 {
+            border-bottom: 2px solid #384252;
+            padding-bottom: 0.25rem;
+            margin-bottom: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #384252;
+        }
+        .main-column h3 {
+             font-size: 1.125rem;
+             font-weight: 700;
+             color: #384252;
+        }
+        .text-accent {
+            color: #A3B1C5; /* Light accent color for titles/subtitles */
+        }
+
+        /* Responsive stack for mobile */
+        @media (max-width: 1024px) {
+            .cv-container {
+                width: 100%;
+                min-height: auto;
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Utility for the bullet points in work experience */
+        .work-bullet::before {
+            content: '•';
+            margin-right: 8px;
+            color: #384252;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 50;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        /* PRINT STYLES: Ensure only the CV container is visible and styled for A4 */
+        @media print {
+            body {
+                background-color: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            /* Hide the editor column and surrounding elements when printing */
+            .max-w-7xl, .editor-form {
+                display: none !important;
+            }
+            .cv-preview {
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                justify-content: flex-start;
+                align-items: flex-start;
+            }
+            .cv-container {
+                width: 21.0cm; 
+                min-height: 29.7cm; 
+                box-shadow: none !important; /* Remove shadow for printing */
+                margin: 0 auto;
+                background-color: white !important;
+            }
+        }
+
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen font-sans flex flex-col">
+<body class="p-4 lg:p-8">
 
-    <script>
-        // --- API CONFIGURATION ---
-        const API_KEY = ""; // Provided by the environment
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+    <!-- Loading Indicator -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p class="mt-4 text-gray-700">Connecting to database...</p>
+    </div>
 
-        // --- LOCAL STORAGE CONSTANTS ---
-        const STORAGE_KEY_LIST = 'resumeBuilder_list';
-        const getResumeKey = (id) => `resumeBuilder_data_${id}`;
-        const BACKUP_FILE_NAME = 'resume_builder_backup.json';
-
-        // Expose functions globally for HTML event handlers
-        window.switchTab = switchTab;
-        window.printResume = printResume;
-        window.updateData = updateData;
-        window.updateArrayItem = updateArrayItem;
-        window.addItem = addItem;
-        window.removeItem = removeItem;
-        window.updateExpPoint = updateExpPoint;
-        window.addExpPoint = addExpPoint;
-        window.removeExpPoint = removeExpPoint;
-        window.saveResume = saveResume;
-        window.loadResume = loadResume;
-        window.deleteResume = deleteResume;
-        window.newResume = newResume;
-        window.inputField = inputField; 
-        window.init = init; 
-        window.exportData = exportData;
-        window.handleImport = handleImport;
-        window.autoGeneratePoints = autoGeneratePoints;
-        window.updateAutoKeyButtonState = updateAutoKeyButtonState;
-        window.handlePhotoUpload = handlePhotoUpload; 
-
-        // --- INITIAL DATA ---
-        const defaultPlaceholderImage = "https://placehold.co/600x600/e2e8f0/334155?text=Upload+Photo";
-        const defaultData = {
-            personal: {
-                firstName: "Richard",
-                lastName: "Sanchez",
-                title: "Marketing Manager",
-                summary: "This is a brief professional summary. Click the Edit tab to customize this content. All data is saved directly in your browser's Local Storage.",
-                // Store photo as Base64 Data URL or a placeholder URL
-                photoUrl: defaultPlaceholderImage 
-            },
-            contact: {
-                phone: "+123-456-7890",
-                email: "hello@reallygreatsite.com",
-                address: "123 Anywhere St., Any City",
-                website: "www.reallygreatsite.com"
-            },
-            education: [
-                { id: 1, year: "2029 - 2030", school: "WARDIERE UNIVERSITY", degree: "Master of Business Management", details: "" },
-            ],
-            skills: ["Project Management", "Teamwork", "Effective Communication"],
-            languages: ["English (Fluent)"],
-            experience: [
-                {
-                    id: 1,
-                    company: "Borcelle Studio",
-                    role: "Marketing Manager & Specialist",
-                    period: "2030 - PRESENT",
-                    points: ["Develop and execute comprehensive marketing strategies.", "Successfully launched two product lines, resulting in a 15% revenue increase."]
-                },
-            ],
-            references: []
-        };
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row space-y-6 lg:space-y-0 lg:space-x-6">
         
-        let data = JSON.parse(JSON.stringify(defaultData)); // Deep copy initial data
-        let savedResumes = []; // Array to hold { id, name } metadata of saved resumes
-        let currentResumeId = null; // Tracks the ID of the resume currently being edited
+        <!-- Editor Column (Left/Top) -->
+        <div id="editorFormContainer" class="editor-form w-full lg:w-1/2 p-6 bg-white rounded-xl shadow-lg h-full transition-all">
+            <h1 class="text-3xl font-bold text-gray-800 mb-4 border-b pb-2">CV Data Editor</h1>
+
+            <!-- NEW CONTROL BUTTONS (Print and Toggle Preview) -->
+            <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mb-6">
+                <button type="button" onclick="window.print()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-150 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-5a2 2 0 00-2-2H5a2 2 0 00-2 2v5a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zM7 13h10M7 5h10"/></svg>
+                    Print CV (A4)
+                </button>
+                <!-- This button toggles between Editor and Preview on mobile/tablet (hidden on large screens) -->
+                <button id="toggleViewButton" type="button" onclick="window.toggleView('toggle')" class="lg:hidden flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-150 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    View CV Preview
+                </button>
+            </div>
+            <!-- END NEW CONTROL BUTTONS -->
+
+            <form id="cv-editor-form" class="space-y-6">
 
-        // --- UTILITY FUNCTIONS ---
-
-        /** Helper for exponential backoff during API calls. */
-        async function fetchWithBackoff(url, options, maxRetries = 5) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (response.ok) {
-                        return response;
-                    } else if (response.status === 429 || response.status >= 500) {
-                        // Too many requests or server error - retry with backoff
-                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    } else {
-                        // Non-retryable error
-                        const errorBody = await response.json();
-                        throw new Error(`API Error: ${response.status} ${response.statusText}. Details: ${JSON.stringify(errorBody)}`);
-                    }
-                } catch (error) {
-                    if (i === maxRetries - 1) {
-                        throw error;
-                    }
-                }
-            }
-        }
-
-        /**
-         * Converts the uploaded file to a Base64 Data URL and saves it to the data model.
-         */
-        function handlePhotoUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                // Update the photoUrl with the Base64 string
-                data.personal.photoUrl = e.target.result;
-                showMessageBox("Photo uploaded successfully!", 'success');
-                renderEditor(); // Re-render to show the new thumbnail
-            };
-            reader.onerror = function() {
-                showMessageBox("Error reading file.", 'error');
-            };
-            
-            // Check file size (e.g., limit to 1MB to keep Base64 small)
-            if (file.size > 1024 * 1024) {
-                 showMessageBox("File size exceeds 1MB limit. Please choose a smaller image.", 'error');
-                 // Clear the file input so the same file can be selected again
-                 event.target.value = ''; 
-                 return;
-            }
-
-            reader.readAsDataURL(file);
-        }
-
-        /**
-         * Checks the role value and updates the disabled state of the Auto Key button.
-         * This prevents a full re-render when typing in the role field.
-         * @param {number} index The index of the experience object.
-         * @param {string} roleValue The current value of the role input.
-         */
-        function updateAutoKeyButtonState(index, roleValue) {
-            const btn = document.getElementById(`auto-key-btn-${index}`);
-            if (btn) {
-                btn.disabled = roleValue.trim() === '';
-            }
-        }
-
-        // --- CORE LOGIC: AUTO-GENERATION (Updated with 12-word limit) ---
-
-        /**
-         * Automatically generates key achievements for a specific experience entry using the Gemini API.
-         * @param {number} expIndex The index of the experience object in data.experience.
-         */
-        async function autoGeneratePoints(expIndex) {
-            const job = data.experience[expIndex];
-            const role = job.role.trim();
-
-            if (!role) {
-                showMessageBox("Please enter a Role before auto-generating achievements.", 'error');
-                return;
-            }
-            
-            const loadingSpinner = document.getElementById(`loading-spinner-${expIndex}`);
-            const autoKeyBtn = document.getElementById(`auto-key-btn-${expIndex}`);
-            
-            // Show loading state
-            loadingSpinner.classList.remove('hidden');
-            autoKeyBtn.disabled = true;
-
-            try {
-                // *** UPDATED SYSTEM PROMPT: Enforces the 12-word limit ***
-                const systemPrompt = `You are an expert career coach and resume writer. Your task is to generate 3 professional, high-impact, bullet-point achievements for a resume based on the provided job title. 
-                Each achievement must focus on quantifiable results, skills, and impact, and **must not exceed 12 words**.
-                The output must be a single string with achievements separated by newlines. Do not use introductory phrases or numbering.`;
-
-                const userQuery = `Generate 3 key achievements for a resume for the role: ${role}.`;
-
-                const payload = {
-                    contents: [{ parts: [{ text: userQuery }] }],
-                    systemInstruction: {
-                        parts: [{ text: systemPrompt }]
-                    },
-                };
-
-                const response = await fetchWithBackoff(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const result = await response.json();
-                const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (generatedText) {
-                    // Split the text by newline, trim whitespace, filter out empty strings, and take max 3
-                    const newPoints = generatedText
-                        .split('\n')
-                        .map(p => p.trim())
-                        .filter(p => p.length > 5 && p.startsWith('-') === false) // Filter out very short lines and lines that start with '-' if the model mistakenly added it
-                        .slice(0, 3); // Limit to maximum 3
-
-                    if (newPoints.length > 0) {
-                        // Replace current points with new points
-                        job.points = newPoints;
-                        showMessageBox(`Successfully generated ${newPoints.length} achievements for ${role}.`, 'success');
-                    } else {
-                        showMessageBox("Generation was successful, but no valid achievements were returned.", 'error');
-                    }
-                } else {
-                    throw new Error("API response was empty or malformed.");
-                }
-
-            } catch (e) {
-                console.error("Auto-generation failed:", e);
-                showMessageBox("Failed to generate achievements. Please ensure the API is accessible.", 'error');
-            } finally {
-                // Hide loading state and re-enable button
-                loadingSpinner.classList.add('hidden');
-                autoKeyBtn.disabled = false;
-                renderEditor(); // Re-render to display the new points and update the button state
-            }
-        }
-
-
-        // --- LOCAL STORAGE CRUD OPERATIONS ---
-        
-        /** Retrieves the list of saved resume metadata from local storage. */
-        function fetchResumes() {
-            try {
-                const listJson = localStorage.getItem(STORAGE_KEY_LIST);
-                savedResumes = listJson ? JSON.parse(listJson) : [];
-            } catch (e) {
-                console.error("Error reading saved list from localStorage: ", e);
-                savedResumes = [];
-            }
-            renderLoadOptions(); // Update the UI dropdown
-        }
-
-        /** Saves the current resume data, updating if currentResumeId exists or creating a new one. */
-        function saveResume() {
-            try {
-                // Determine if we are saving a new resume or updating an existing one
-                const newId = currentResumeId || crypto.randomUUID();
-                const resumeName = `${data.personal.firstName} ${data.personal.lastName} CV`;
-
-                // 1. Prepare and save the main data object
-                const dataToSave = JSON.parse(JSON.stringify(data)); // Deep copy current state
-                localStorage.setItem(getResumeKey(newId), JSON.stringify(dataToSave));
-
-                // 2. Update the resume list (metadata)
-                const existingIndex = savedResumes.findIndex(r => r.id === newId);
-                const metadata = {
-                    id: newId,
-                    name: resumeName,
-                    timestamp: new Date().toISOString() // Store timestamp for sorting/display
-                };
-
-                if (existingIndex !== -1) {
-                    // Update existing metadata
-                    savedResumes[existingIndex] = metadata;
-                } else {
-                    // Add new metadata
-                    savedResumes.push(metadata);
-                }
-
-                // 3. Save the updated list back to localStorage
-                localStorage.setItem(STORAGE_KEY_LIST, JSON.stringify(savedResumes));
-
-                currentResumeId = newId; // Set ID for future updates
-                showMessageBox(`CV Saved: ${resumeName}!`, 'success');
-                fetchResumes(); // Re-fetch/re-render load options
-                renderEditor(); // Update status text
-            } catch (e) {
-                console.error("Error saving document to localStorage: ", e);
-                showMessageBox("Error saving CV. Local Storage might be full or inaccessible.", 'error');
-            }
-        }
-
-        /** Loads a selected resume into the editor. */
-        function loadResume(id) {
-            try {
-                const resumeJson = localStorage.getItem(getResumeKey(id));
-                const selected = savedResumes.find(r => r.id === id);
-
-                if (resumeJson && selected) {
-                    data = JSON.parse(resumeJson);
-                    // Ensure a photoUrl exists for safety, defaulting if missing
-                    if (!data.personal.photoUrl) {
-                        data.personal.photoUrl = defaultPlaceholderImage;
-                    }
-                    currentResumeId = id;
-                    showMessageBox(`CV Loaded: ${selected.name}`, 'info');
-                    renderEditor();
-                    switchTab('edit');
-                } else {
-                    showMessageBox("Could not find the selected CV.", 'error');
-                }
-            } catch (e) {
-                console.error("Error loading resume from localStorage: ", e);
-                showMessageBox("Error loading CV data.", 'error');
-            }
-        }
-
-        /** Deletes a selected resume from localStorage. */
-        function deleteResume(id) {
-            if (!confirmAction("Are you sure you want to delete this CV? This action cannot be undone.")) {
-                return;
-            }
-            try {
-                // 1. Remove the main data object
-                localStorage.removeItem(getResumeKey(id));
-
-                // 2. Remove the metadata from the list
-                savedResumes = savedResumes.filter(r => r.id !== id);
-                localStorage.setItem(STORAGE_KEY_LIST, JSON.stringify(savedResumes));
-
-                if (currentResumeId === id) {
-                    // If the current CV is deleted, start a new blank one
-                    newResume(false); 
-                }
-                
-                showMessageBox("CV deleted successfully.", 'success');
-                fetchResumes(); // Update the load list
-                renderEditor(); // Update status text
-            } catch (e) {
-                console.error("Error deleting document from localStorage: ", e);
-                showMessageBox("Error deleting CV.", 'error');
-            }
-        }
-
-        /** Clears the current editor content and starts a new CV. */
-        function newResume(showConfirmation = true) {
-            if (showConfirmation && !confirmAction("Are you sure you want to start a new, unsaved CV?")) {
-                return;
-            }
-            
-            data = JSON.parse(JSON.stringify(defaultData));
-            currentResumeId = null;
-            if (showConfirmation) {
-                showMessageBox("New CV started.", 'info');
-            }
-            renderEditor();
-        }
-
-        // --- BACKUP AND RESTORE FUNCTIONS ---
-
-        /** Exports all saved resumes as a single JSON file. */
-        function exportData() {
-            try {
-                const backupData = {
-                    metadata: savedResumes,
-                    data: {}
-                };
-
-                // Fetch the actual content for all saved resumes
-                for (const resume of savedResumes) {
-                    const resumeKey = getResumeKey(resume.id);
-                    const resumeContent = localStorage.getItem(resumeKey);
-                    if (resumeContent) {
-                        backupData.data[resume.id] = JSON.parse(resumeContent);
-                    }
-                }
-                
-                const json = JSON.stringify(backupData, null, 2);
-                const blob = new Blob([json], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                
-                // Create a temporary link element to trigger the download
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = BACKUP_FILE_NAME;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-
-                showMessageBox(`Successfully exported ${savedResumes.length} CVs as ${BACKUP_FILE_NAME}.`, 'success');
-
-            } catch (e) {
-                console.error("Error during data export:", e);
-                showMessageBox("Error exporting data. Check console for details.", 'error');
-            }
-        }
-
-        /** Handles the file import process (the Restore functionality). */
-        function handleImport(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            if (!confirmAction("WARNING: Importing data will overwrite existing CVs if their IDs match. Are you sure you want to proceed?")) {
-                // Clear the file input so the user can try again if they cancel
-                event.target.value = ''; 
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const imported = JSON.parse(e.target.result);
-                    
-                    if (!imported || !Array.isArray(imported.metadata) || typeof imported.data !== 'object') {
-                        showMessageBox("Invalid backup file structure. Please upload a file generated by the export feature.", 'error');
-                        return;
-                    }
-
-                    let importedCount = 0;
-                    
-                    // 1. Process and save the main data objects
-                    for (const id in imported.data) {
-                        localStorage.setItem(getResumeKey(id), JSON.stringify(imported.data[id]));
-                        importedCount++;
-                    }
-
-                    // 2. Overwrite the metadata list with the imported list
-                    localStorage.setItem(STORAGE_KEY_LIST, JSON.stringify(imported.metadata));
-                    
-                    // Reset current state to the first imported resume or the default new one
-                    if (imported.metadata.length > 0) {
-                        loadResume(imported.metadata[0].id);
-                    } else {
-                        newResume(false);
-                    }
-
-                    showMessageBox(`Restore complete! ${importedCount} CVs were imported.`, 'success');
-                    fetchResumes(); // Re-render load options
-                    renderEditor();
-
-                } catch (error) {
-                    console.error("Error parsing or importing backup file:", error);
-                    showMessageBox("Failed to restore data. The file might be corrupted or not valid JSON.", 'error');
-                } finally {
-                    // Clear the file input to allow re-uploading the same file
-                    event.target.value = ''; 
-                }
-            };
-
-            reader.readAsText(file);
-        }
-
-        // --- UI & State Helpers ---
-        
-        /** Custom confirmation dialog placeholder. */
-        function confirmAction(message) {
-             // Using window.confirm() for simplicity since this is user-facing data manipulation
-             return window.confirm(message); 
-        }
-
-        /** Custom message box for feedback (instead of alert). */
-        function showMessageBox(message, type) {
-            const box = document.getElementById('message-box');
-            box.textContent = message;
-            box.classList.remove('hidden', 'bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800', 'bg-blue-100', 'text-blue-800');
-            box.classList.add('animate-in', 'fade-in-up', 'duration-300');
-
-            if (type === 'success') box.classList.add('bg-green-100', 'text-green-800');
-            else if (type === 'error') box.classList.add('bg-red-100', 'text-red-800');
-            else box.classList.add('bg-blue-100', 'text-blue-800');
-
-            setTimeout(() => {
-                box.classList.add('hidden');
-                box.classList.remove('animate-in', 'fade-in-up');
-            }, 4000);
-        }
-
-        /** Renders the list of saved resumes in the dropdown. */
-        function renderLoadOptions() {
-            const container = document.getElementById('load-options');
-            if (!container) return;
-            
-            // Sort by latest saved
-            const sortedResumes = [...savedResumes].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-            container.innerHTML = sortedResumes.map(resume => `
-                <div class="flex justify-between items-center p-2 hover:bg-slate-100 rounded">
-                    <button onclick="loadResume('${resume.id}')" class="text-sm text-slate-700 hover:text-blue-600 truncate flex-1 text-left">
-                        ${resume.name} 
-                        ${resume.id === currentResumeId ? '<span class="text-xs text-blue-500 font-bold">(Editing)</span>' : ''}
-                    </button>
-                    <button onclick="deleteResume('${resume.id}')" class="ml-2 text-red-400 hover:text-red-600 transition-colors">
-                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                    </button>
-                </div>
-            `).join('');
-
-            // If no resumes, display a message
-            if (savedResumes.length === 0) {
-                container.innerHTML = '<p class="text-sm text-slate-500 p-2">No saved CVs. Click "Save" to create your first one!</p>';
-            }
-
-            lucide.createIcons();
-        }
-
-
-        // --- CORE RESUME BUILDER LOGIC (Adapted) ---
-
-        function init() {
-            // No need for auth logic, just fetch local data and render
-            fetchResumes();
-            renderEditor();
-            lucide.createIcons();
-            switchTab('edit');
-        }
-
-        function switchTab(tab) {
-            const editor = document.getElementById('editor-container');
-            const preview = document.getElementById('preview-container');
-            const btnEdit = document.getElementById('btn-edit');
-            const btnPreview = document.getElementById('btn-preview');
-
-            if (tab === 'edit') {
-                editor.classList.remove('hidden');
-                preview.classList.add('hidden');
-                
-                btnEdit.classList.add('bg-blue-600', 'text-white');
-                btnEdit.classList.remove('bg-slate-700', 'text-gray-300', 'hover:bg-slate-600');
-                
-                btnPreview.classList.remove('bg-blue-600', 'text-white');
-                btnPreview.classList.add('bg-slate-700', 'text-gray-300', 'hover:bg-slate-600');
-            } else {
-                renderPreview(); // Re-render preview with latest data
-                editor.classList.add('hidden');
-                preview.classList.remove('hidden');
-
-                btnPreview.classList.add('bg-blue-600', 'text-white');
-                btnPreview.classList.remove('bg-slate-700', 'text-gray-300', 'hover:bg-slate-600');
-
-                btnEdit.classList.remove('bg-blue-600', 'text-white');
-                btnEdit.classList.add('bg-slate-700', 'text-gray-300', 'hover:bg-slate-600');
-            }
-            lucide.createIcons();
-        }
-
-        function printResume() {
-            switchTab('preview');
-            setTimeout(() => window.print(), 300); // Small delay to ensure render
-        }
-
-        // --- DATA HANDLERS ---
-        
-        function updateData(path, value) {
-            let parts = path.split('.');
-            let obj = data;
-            for (let i = 0; i < parts.length - 1; i++) {
-                obj = obj[parts[i]];
-            }
-            obj[parts[parts.length - 1]] = value;
-        }
-
-        function updateArrayItem(category, index, field, value) {
-            if (field) {
-                data[category][index][field] = value;
-            } else {
-                data[category][index] = value; 
-            }
-            // FIX: Removed the renderEditor() call here to prevent loss of focus when typing in 'Role'.
-        }
-
-        function addItem(category, template) {
-            if (template) {
-                data[category].push({ ...template, id: Date.now() });
-            } else {
-                data[category].push("");
-            }
-            renderEditor();
-            lucide.createIcons();
-        }
-
-        function removeItem(category, index) {
-            data[category].splice(index, 1);
-            renderEditor();
-            lucide.createIcons();
-        }
-
-        // Nested experience points
-        function updateExpPoint(expIndex, ptIndex, value) {
-            data.experience[expIndex].points[ptIndex] = value;
-        }
-
-        function addExpPoint(expIndex) {
-            data.experience[expIndex].points.push("");
-            renderEditor();
-            lucide.createIcons();
-        }
-
-        function removeExpPoint(expIndex, ptIndex) {
-            data.experience[expIndex].points.splice(ptIndex, 1);
-            renderEditor();
-            lucide.createIcons();
-        }
-
-
-        // --- RENDERING FUNCTIONS ---
-
-        function renderEditor() {
-            const container = document.getElementById('editor-container');
-            if (!container) return; 
-            
-            const currentName = currentResumeId ? savedResumes.find(r => r.id === currentResumeId)?.name || 'Untitled CV' : 'New/Unsaved CV';
-            const saveButtonText = currentResumeId ? 'Update Current CV' : 'Save New CV';
-            const saveButtonClass = currentResumeId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700';
-            const currentPhotoSrc = data.personal.photoUrl || defaultPlaceholderImage;
-
-
-            let html = `
-                <!-- Save/Load Panel -->
-                <div class="bg-blue-50 p-6 rounded-xl shadow-inner mb-8 border border-blue-200">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
-                            <i data-lucide="archive" class="w-5 h-5"></i> CV Management (Local Storage)
-                        </h2>
-                        <span id="current-cv-status" class="text-sm font-medium px-3 py-1 rounded-full ${currentResumeId ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-700'}">
-                            ${currentName}
-                        </span>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <!-- Save/Update -->
-                        <button onclick="saveResume()" class="py-3 px-4 rounded-lg font-bold text-white transition-colors flex items-center justify-center gap-2 ${saveButtonClass}">
-                            <i data-lucide="save" class="w-5 h-5"></i> ${saveButtonText}
-                        </button>
-                        <!-- New -->
-                        <button onclick="newResume(true)" class="py-3 px-4 rounded-lg font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition-colors flex items-center justify-center gap-2">
-                            <i data-lucide="file-plus" class="w-5 h-5"></i> New CV
-                        </button>
-                        
-                        <!-- Load Dropdown -->
-                        <div class="relative group col-span-2">
-                            <button class="w-full py-3 px-4 rounded-lg font-bold text-white bg-purple-600 hover:bg-purple-700 transition-colors flex items-center justify-center gap-2">
-                                <i data-lucide="folder-open" class="w-5 h-5"></i> Load Saved CVs
-                            </button>
-                            <div class="absolute right-0 mt-2 w-full md:w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-10 hidden group-hover:block max-h-60 overflow-y-auto">
-                                <div id="load-options" class="p-2">
-                                    <!-- Saved resumes list injected here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Export & Import/Restore Section -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-blue-100 pt-4">
-                        <button onclick="exportData()" class="py-3 px-4 rounded-lg font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors flex items-center justify-center gap-2">
-                            <i data-lucide="download" class="w-5 h-5"></i> Export Backup (JSON)
-                        </button>
-                        <div class="relative">
-                            <label for="import-file" class="w-full py-3 px-4 rounded-lg font-bold text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2 cursor-pointer">
-                                <i data-lucide="upload" class="w-5 h-5"></i> Import/Restore CVs
-                            </label>
-                            <!-- Hidden File Input -->
-                            <input type="file" id="import-file" accept="application/json" onchange="handleImport(event)" class="hidden">
-                        </div>
-                    </div>
-                    <p class="text-xs text-slate-500 mt-4 text-center italic">Your data is stored locally. Use Export/Import to create external backups.</p>
-                </div>
-                
                 <!-- Personal Info -->
-                <section class="space-y-4">
-                    <h2 class="text-2xl font-bold text-slate-800 border-b pb-2">Personal Information</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        ${inputField('First Name', data.personal.firstName, "updateData('personal.firstName', this.value)")}
-                        ${inputField('Last Name', data.personal.lastName, "updateData('personal.lastName', this.value)")}
-                        ${inputField('Job Title', data.personal.title, "updateData('personal.title', this.value)", "md:col-span-2")}
-                        
-                        <!-- PHOTO UPLOAD FIELD -->
-                        <div class="md:col-span-2 flex items-center gap-4">
-                            <div class="flex-shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-slate-300">
-                                <img id="photo-preview" src="${currentPhotoSrc}" onerror="this.src='${defaultPlaceholderImage}'" alt="Photo Preview" class="w-full h-full object-cover">
-                            </div>
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Profile Photo (Max 1MB)</label>
-                                <label for="photo-upload" class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-500 hover:bg-blue-600 transition-colors">
-                                    <i data-lucide="image" class="w-4 h-4 mr-2"></i> Upload Photo
-                                </label>
-                                <input type="file" id="photo-upload" accept="image/*" onchange="handlePhotoUpload(event)" class="hidden">
-                            </div>
-                        </div>
-                        <!-- END PHOTO UPLOAD FIELD -->
+                <fieldset class="p-4 border border-gray-200 rounded-lg">
+                    <legend class="text-lg font-semibold text-indigo-600 px-2">Personal Info</legend>
+                    <input type="text" data-field="name" placeholder="Your Name" class="input-field">
+                    <input type="text" data-field="title" placeholder="Professional Title (e.g., Software Engineer)" class="input-field">
+                    <textarea data-field="profile" placeholder="Profile Summary (1-3 sentences)" rows="4" class="input-field"></textarea>
+                    <input type="text" data-field="contact.phone" placeholder="Phone Number" class="input-field">
+                    <input type="email" data-field="contact.email" placeholder="Email Address" class="input-field">
+                    <input type="text" data-field="contact.address" placeholder="Address / Location" class="input-field">
+                    <input type="url" data-field="imageUrl" placeholder="Profile Image URL (Optional)" class="input-field">
+                </fieldset>
 
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Profile Summary</label>
-                            <textarea oninput="updateData('personal.summary', this.value)" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all h-24">${data.personal.summary}</textarea>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Contact Info -->
-                <section class="space-y-4">
-                    <h2 class="text-2xl font-bold text-slate-800 border-b pb-2">Contact Details</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        ${inputField('Phone', data.contact.phone, "updateData('contact.phone', this.value)")}
-                        ${inputField('Email', data.contact.email, "updateData('contact.email', this.value)")}
-                        ${inputField('Address', data.contact.address, "updateData('contact.address', this.value)")}
-                        ${inputField('Website', data.contact.website, "updateData('contact.website', this.value)")}
-                    </div>
-                </section>
-
-                <!-- Experience -->
-                <section class="space-y-4">
-                    <div class="flex justify-between items-center border-b pb-2">
-                        <h2 class="text-2xl font-bold text-slate-800">Work Experience</h2>
-                        <button onclick="addItem('experience', {company: 'New Company', role: 'Role', period: '2024', points: ['']})" class="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-medium"><i data-lucide="plus" class="w-4 h-4"></i> Add Job</button>
-                    </div>
-                    ${data.experience.map((job, idx) => `
-                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 relative group">
-                            <button onclick="removeItem('experience', ${idx})" class="absolute top-4 right-4 text-red-400 hover:text-red-600"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 pr-8">
-                                ${inputField('Company', job.company, `updateArrayItem('experience', ${idx}, 'company', this.value)`)}
-                                ${inputField('Period', job.period, `updateArrayItem('experience', ${idx}, 'period', this.value)`)}
-                                <!-- Focus FIX: updateAutoKeyButtonState prevents full re-render here -->
-                                ${inputField('Role', job.role, `updateArrayItem('experience', ${idx}, 'role', this.value); updateAutoKeyButtonState(${idx}, this.value);`, 'md:col-span-2')}
-                            </div>
-                            <div class="space-y-2">
-                                <div class="flex justify-between items-center mb-2">
-                                    <label class="block text-xs font-bold text-slate-500 uppercase">Key Achievements</label>
-                                    <button id="auto-key-btn-${idx}" onclick="autoGeneratePoints(${idx})" class="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1 font-medium transition-colors disabled:opacity-50" ${job.role.trim() === '' ? 'disabled' : ''}>
-                                        <i data-lucide="sparkles" class="w-3 h-3"></i> Auto Key
-                                    </button>
-                                </div>
-                                <!-- Loading Spinner -->
-                                <div id="loading-spinner-${idx}" class="text-xs text-purple-500 hidden items-center gap-2 px-2 py-1 bg-purple-50 rounded-md">
-                                    <svg class="animate-spin -ml-1 h-4 w-4 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Generating...
-                                </div>
-                                ${job.points.map((pt, pIdx) => `
-                                    <div class="flex gap-2">
-                                        <input value="${pt}" oninput="updateExpPoint(${idx}, ${pIdx}, this.value)" class="flex-1 p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Achievement...">
-                                        <button onclick="removeExpPoint(${idx}, ${pIdx})" class="text-slate-400 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                    </div>
-                                `).join('')}
-                                <button onclick="addExpPoint(${idx})" class="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1 mt-1"><i data-lucide="plus" class="w-3 h-3"></i> Add Bullet Point</button>
-                            </div>
-                        </div>
-                    `).join('')}
-                </section>
-
-                <!-- Education -->
-                <section class="space-y-4">
-                     <div class="flex justify-between items-center border-b pb-2">
-                        <h2 class="text-2xl font-bold text-slate-800">Education</h2>
-                        <button onclick="addItem('education', { year: '2024', school: 'University', degree: 'Degree', details: '' })" class="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-medium"><i data-lucide="plus" class="w-4 h-4"></i> Add School</button>
-                    </div>
-                    ${data.education.map((edu, idx) => `
-                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 relative">
-                            <button onclick="removeItem('education', ${idx})" class="absolute top-4 right-4 text-red-400 hover:text-red-600"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pr-8">
-                                ${inputField('School', edu.school, `updateArrayItem('education', ${idx}, 'school', this.value)`)}
-                                ${inputField('Year', edu.year, `updateArrayItem('education', ${idx}, 'year', this.value)`)}
-                                ${inputField('Degree', edu.degree, `updateArrayItem('education', ${idx}, 'degree', this.value)`)}
-                                ${inputField('Details', edu.details, `updateArrayItem('education', ${idx}, 'details', this.value)`)}
-                            </div>
-                        </div>
-                    `).join('')}
-                </section>
-
-                <!-- Skills & Languages -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <section class="space-y-4">
-                         <div class="flex justify-between items-center border-b pb-2">
-                            <h2 class="text-xl font-bold text-slate-800">Skills</h2>
-                            <button onclick="addItem('skills')" class="text-blue-600 hover:text-blue-800"><i data-lucide="plus" class="w-5 h-5"></i></button>
-                        </div>
-                        <div class="space-y-2">
-                            ${data.skills.map((skill, idx) => `
-                                <div class="flex gap-2">
-                                    <input value="${skill}" oninput="updateArrayItem('skills', ${idx}, null, this.value)" class="flex-1 p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none">
-                                    <button onclick="removeItem('skills', ${idx})" class="text-slate-400 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </section>
-
-                    <section class="space-y-4">
-                         <div class="flex justify-between items-center border-b pb-2">
-                            <h2 class="text-xl font-bold text-slate-800">Languages</h2>
-                            <button onclick="addItem('languages')" class="text-blue-600 hover:text-blue-800"><i data-lucide="plus" class="w-5 h-5"></i></button>
-                        </div>
-                        <div class="space-y-2">
-                            ${data.languages.map((lang, idx) => `
-                                <div class="flex gap-2">
-                                    <input value="${lang}" oninput="updateArrayItem('languages', ${idx}, null, this.value)" class="flex-1 p-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none">
-                                    <button onclick="removeItem('languages', ${idx})" class="text-slate-400 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </section>
+                <!-- Dynamic Array Fields -->
+                <div id="skills-section" class="dynamic-section p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-lg text-indigo-600 mb-2">Skills</h3>
+                    <div id="skills-list" class="space-y-2"></div>
+                    <button type="button" onclick="addItem('skills')" class="mt-2 text-sm bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md transition duration-150 shadow-md">Add Skill</button>
                 </div>
-                
-                 <!-- References -->
-                <section class="space-y-4">
-                    <div class="flex justify-between items-center border-b pb-2">
-                        <h2 class="text-2xl font-bold text-slate-800">References</h2>
-                        <button onclick="addItem('references', { name: 'Name', title: 'Title', phone: 'Phone', email: 'Email' })" class="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-medium"><i data-lucide="plus" class="w-4 h-4"></i> Add Ref</button>
+
+                <div id="languages-section" class="dynamic-section p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-lg text-indigo-600 mb-2">Languages</h3>
+                    <div id="languages-list" class="space-y-2"></div>
+                    <button type="button" onclick="addItem('languages')" class="mt-2 text-sm bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md shadow-md transition duration-150">Add Language</button>
+                </div>
+
+                <div id="hobbies-section" class="dynamic-section p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-lg text-indigo-600 mb-2">Hobbies</h3>
+                    <div id="hobbies-list" class="space-y-2"></div>
+                    <button type="button" onclick="addItem('hobbies')" class="mt-2 text-sm bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md shadow-md transition duration-150">Add Hobby</button>
+                </div>
+
+                <div id="education-section" class="dynamic-section p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-lg text-indigo-600 mb-2">Education</h3>
+                    <div id="education-list" class="space-y-4"></div>
+                    <button type="button" onclick="addItem('education')" class="mt-2 bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-md shadow-md transition duration-150">Add Education</button>
+                </div>
+
+                <div id="work-experience-section" class="dynamic-section p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-lg text-indigo-600 mb-2">Work Experience</h3>
+                    <div id="work-experience-list" class="space-y-6"></div>
+                    <button type="button" onclick="addItem('workExperience')" class="mt-2 bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-md shadow-md transition duration-150">Add Work Experience</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- CV Preview Column (Right/Bottom) -->
+        <div id="cvPreviewContainer" class="cv-preview w-full lg:w-1/2 flex justify-center items-start pt-6 lg:pt-0">
+            <div id="cv-content" class="cv-container rounded-lg transition-all">
+                <!-- Content will be rendered here by JavaScript -->
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Firebase Imports and Setup -->
+    <script type="module">
+        import { initializeApp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL CONFIGS AND INITIALIZATION ---
+        setLogLevel('error');
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let userId = null;
+        let isAuthReady = false;
+        let cvData = {};
+        let saveTimeout;
+        let currentView = 'editor'; // Track current state for mobile
+
+        // Default CV Structure
+        const defaultCV = {
+            name: "Your Name",
+            title: "Software Engineer",
+            profile: "I am a software engineer with experience in a variety of programming languages and a track record of delivering high-quality code. I am skilled in problem-solving and have a strong background in computer science. I am a strong communicator and enjoy working collaboratively with others.",
+            contact: {
+                phone: "+1 2345 6789",
+                email: "example@gmail.com",
+                address: "#1 road, city/state-0011"
+            },
+            skills: [
+                "SQL Database Management",
+                "Linux/Unix Command line",
+                "Python",
+                "C++",
+                "JAVA"
+            ],
+            languages: [
+                { name: "English", proficiency: "Proficient" },
+                { name: "Spanish", proficiency: "Intermediate" }
+            ],
+            hobbies: [
+                "Writing",
+                "Cricket",
+                "Music"
+            ],
+            workExperience: [
+                {
+                    title: "Senior Software Developer",
+                    company: "Company - Country",
+                    dates: "Jan 2022 - Dec 2023",
+                    bullets: [
+                        "Developed and maintained software using Java, Python, and C++.",
+                        "Led cross-functional teams to deliver successful software projects.",
+                        "Wrote detailed technical specifications and documentation."
+                    ]
+                }
+            ],
+            education: [
+                {
+                    degree: "Masters in Software Engineering",
+                    institution: "XYX University, Bangalore",
+                    dates: "Jan 2019 - Dec 2020"
+                }
+            ],
+            imageUrl: ""
+        };
+
+        // --- FIREBASE HELPER ---
+        const getCvDocRef = (userId) => doc(db, 'artifacts', appId, 'users', userId, 'cvData', 'data');
+
+        // --- DATA BINDING & PERSISTENCE ---
+
+        // Debounced save function
+        function debounceSave(data) {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                if (userId && isAuthReady) {
+                    setDoc(getCvDocRef(userId), data, { merge: true })
+                        .catch(err => console.error("Error saving data:", err));
+                }
+            }, 500); // Wait 500ms after last input before saving
+        }
+
+        // Handle general input changes (non-array fields)
+        function handleInput(event) {
+            const field = event.target.dataset.field;
+            const value = event.target.value;
+            if (!field) return;
+
+            // Simple dot-notation setter for nested objects
+            const parts = field.split('.');
+            let current = cvData;
+            for (let i = 0; i < parts.length - 1; i++) {
+                if (!current[parts[i]]) current[parts[i]] = {};
+                current = current[parts[i]];
+            }
+            current[parts[parts.length - 1]] = value;
+
+            debounceSave(cvData);
+        }
+
+        // Handle array item changes (skills, hobbies, etc.)
+        function handleArrayItemChange(type, index, field, value) {
+            if (field === 'item') {
+                cvData[type][index] = value;
+            } else {
+                // For objects in array (like languages/education/workExperience)
+                if (!cvData[type][index]) {
+                    if (type === 'languages') cvData[type][index] = { name: '', proficiency: '' };
+                    else if (type === 'education') cvData[type][index] = { degree: '', institution: '', dates: '' };
+                    else if (type === 'workExperience') cvData[type][index] = { title: '', company: '', dates: '', bullets: [''] };
+                }
+                cvData[type][index][field] = value;
+            }
+            debounceSave(cvData);
+        }
+
+        // Handle work experience bullet point changes
+        function handleBulletChange(workIndex, bulletIndex, value) {
+            cvData.workExperience[workIndex].bullets[bulletIndex] = value;
+            debounceSave(cvData);
+        }
+        
+        function addBullet(workIndex) {
+            cvData.workExperience[workIndex].bullets.push("");
+            debounceSave(cvData);
+            // After saving, the onSnapshot listener will re-render everything
+        }
+
+        function removeBullet(workIndex, bulletIndex) {
+            cvData.workExperience[workIndex].bullets.splice(bulletIndex, 1);
+            debounceSave(cvData);
+        }
+
+        // --- UI RENDER FUNCTIONS ---
+
+        function renderForm(data) {
+            // Render Simple Fields (Name, Title, Profile, Contact)
+            document.querySelectorAll('#cv-editor-form input, #cv-editor-form textarea').forEach(input => {
+                const field = input.dataset.field;
+                if (!field) return;
+
+                const parts = field.split('.');
+                let value = data;
+                for (const part of parts) {
+                    value = value ? value[part] : '';
+                }
+                // Only set value if it's different to prevent cursor jump
+                if (input.value !== value) {
+                    input.value = value || '';
+                }
+            });
+
+            // Render Dynamic Arrays (Skills, Hobbies)
+            ['skills', 'hobbies'].forEach(type => {
+                const listEl = document.getElementById(`${type}-list`);
+                if (!listEl) return;
+                listEl.innerHTML = data[type]?.map((item, index) => `
+                    <div class="flex space-x-2">
+                        <input type="text" value="${item}" oninput="window.handleArrayItemChange('${type}', ${index}, 'item', this.value)" placeholder="${type === 'skills' ? 'Skill name' : 'Hobby name'}" class="input-field flex-grow">
+                        <button type="button" onclick="window.removeItem('${type}', ${index})" class="text-red-500 hover:text-red-700 p-2 rounded-full transition duration-150">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" /></svg>
+                        </button>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        ${data.references.map((ref, idx) => `
-                            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 relative">
-                                <button onclick="removeItem('references', ${idx})" class="absolute top-2 right-2 text-red-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                <div class="space-y-2 pr-6">
-                                    ${inputField('Name', ref.name, `updateArrayItem('references', ${idx}, 'name', this.value)`)}
-                                    ${inputField('Title', ref.title, `updateArrayItem('references', ${idx}, 'title', this.value)`)}
-                                    ${inputField('Phone', ref.phone, `updateArrayItem('references', ${idx}, 'phone', this.value)`)}
-                                    ${inputField('Email', ref.email, `updateArrayItem('references', ${idx}, 'email', this.value)`)}
-                                </div>
+                `).join('') || '';
+            });
+
+            // Render Languages
+            const langListEl = document.getElementById('languages-list');
+            langListEl.innerHTML = data.languages?.map((lang, index) => `
+                <div class="p-3 border border-gray-100 rounded-lg space-y-1">
+                    <div class="flex items-center space-x-2">
+                        <input type="text" value="${lang.name}" oninput="window.handleArrayItemChange('languages', ${index}, 'name', this.value)" placeholder="Language Name" class="input-field flex-grow">
+                        <select onchange="window.handleArrayItemChange('languages', ${index}, 'proficiency', this.value)" class="input-field w-1/3">
+                            ${['Beginner', 'Intermediate', 'Proficient', 'Native'].map(p => 
+                                `<option value="${p}" ${lang.proficiency === p ? 'selected' : ''}>${p}</option>`
+                            ).join('')}
+                        </select>
+                        <button type="button" onclick="window.removeItem('languages', ${index})" class="text-red-500 hover:text-red-700 p-2 rounded-full transition duration-150">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" /></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('') || '';
+
+            // Render Education
+            const eduListEl = document.getElementById('education-list');
+            eduListEl.innerHTML = data.education?.map((edu, index) => `
+                <div class="p-3 border border-gray-100 rounded-lg space-y-2">
+                    <input type="text" value="${edu.degree}" oninput="window.handleArrayItemChange('education', ${index}, 'degree', this.value)" placeholder="Degree/Major" class="input-field">
+                    <input type="text" value="${edu.institution}" oninput="window.handleArrayItemChange('education', ${index}, 'institution', this.value)" placeholder="University/Institution" class="input-field">
+                    <div class="flex items-center space-x-2">
+                        <input type="text" value="${edu.dates}" oninput="window.handleArrayItemChange('education', ${index}, 'dates', this.value)" placeholder="Dates (e.g., Jan 2019 - Dec 2020)" class="input-field flex-grow">
+                        <button type="button" onclick="window.removeItem('education', ${index})" class="text-red-500 hover:text-red-700 p-2 rounded-full transition duration-150">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" /></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('') || '';
+
+            // Render Work Experience
+            const workListEl = document.getElementById('work-experience-list');
+            workListEl.innerHTML = data.workExperience?.map((work, index) => `
+                <div class="p-3 border border-gray-100 rounded-lg space-y-2">
+                    <input type="text" value="${work.title}" oninput="window.handleArrayItemChange('workExperience', ${index}, 'title', this.value)" placeholder="Job Title" class="input-field">
+                    <div class="flex space-x-2">
+                        <input type="text" value="${work.company}" oninput="window.handleArrayItemChange('workExperience', ${index}, 'company', this.value)" placeholder="Company - Location" class="input-field flex-grow">
+                        <input type="text" value="${work.dates}" oninput="window.handleArrayItemChange('workExperience', ${index}, 'dates', this.value)" placeholder="Dates (e.g., Jan 2022 - Dec 2023)" class="input-field w-1/3">
+                    </div>
+                    <div class="mt-2 space-y-1 p-2 bg-gray-50 rounded-md">
+                        <h4 class="font-medium text-sm text-gray-700">Bullet Points:</h4>
+                        ${work.bullets.map((bullet, bIndex) => `
+                            <div class="flex items-center space-x-2">
+                                <span class="text-gray-500">•</span>
+                                <input type="text" value="${bullet}" oninput="window.handleBulletChange(${index}, ${bIndex}, this.value)" placeholder="Key achievement or responsibility" class="input-field flex-grow text-sm">
+                                <button type="button" onclick="window.removeBullet(${index}, ${bIndex})" class="text-red-400 hover:text-red-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" /></svg>
+                                </button>
                             </div>
                         `).join('')}
+                        <button type="button" onclick="window.addBullet(${index})" class="mt-1 text-xs text-indigo-500 hover:text-indigo-700 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                            Add Bullet
+                        </button>
                     </div>
-                </section>
-            `;
-            container.innerHTML = html;
-            renderLoadOptions(); 
-            lucide.createIcons();
+                    <button type="button" onclick="window.removeItem('workExperience', ${index})" class="mt-2 text-sm bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded-md shadow-md transition duration-150">Remove Job</button>
+                </div>
+            `).join('') || '';
         }
 
-        function renderPreview() {
-            const container = document.getElementById('preview-container');
+        function renderCV(data) {
+            const cvContent = document.getElementById('cv-content');
             
-            // Generate List Items
-            const skillsHtml = data.skills.map(s => `<li>${s}</li>`).join('');
-            const langsHtml = data.languages.map(l => `<li>${l}</li>`).join('');
+            // Generate Avatar HTML
+            let avatarHtml;
+            if (data.imageUrl) {
+                avatarHtml = `<img src="${data.imageUrl}" onerror="this.onerror=null;this.src='https://placehold.co/150x150/384252/ffffff?text=Image+Error'" class="w-40 h-40 object-cover rounded-full border-4 border-white mx-auto mb-4" alt="Profile Picture">`;
+            } else {
+                const initials = (data.name || 'NN').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                avatarHtml = `
+                    <div class="w-40 h-40 rounded-full border-4 border-white mx-auto mb-4 flex items-center justify-center text-6xl font-extrabold bg-gray-500">
+                        ${initials}
+                    </div>
+                `;
+            }
+
+            cvContent.innerHTML = `
+                <!-- Dark Column (Left) -->
+                <div class="dark-column p-8 space-y-8">
+                    
+                    <!-- Avatar -->
+                    <div class="text-center">
+                        ${avatarHtml}
+                    </div>
+
+                    <!-- Name & Title -->
+                    <div class="text-center mb-6">
+                        <h1 class="text-3xl font-bold text-white mb-1">${data.name || 'Your Name'}</h1>
+                        <p class="text-lg font-medium text-accent">${data.title || 'Professional Title'}</p>
+                    </div>
+
+                    <!-- Contact -->
+                    <div class="pt-4 border-t border-gray-600">
+                        <h3 class="text-xl font-bold mb-3 text-white">CONTACT</h3>
+                        <div class="space-y-2 text-sm">
+                            <p class="flex items-center"><span class="mr-3 text-accent text-xl">&#9742;</span> ${data.contact.phone || '+1 2345 6789'}</p>
+                            <p class="flex items-center"><span class="mr-3 text-accent text-xl">&#9993;</span> ${data.contact.email || 'example@gmail.com'}</p>
+                            <p class="flex items-center"><span class="mr-3 text-accent text-xl">&#128205;</span> ${data.contact.address || '#1 road, city/state-0011'}</p>
+                        </div>
+                    </div>
+
+                    <!-- Skills -->
+                    <div class="pt-4 border-t border-gray-600">
+                        <h3 class="text-xl font-bold mb-3 text-white">SKILLS</h3>
+                        <ul class="list-disc ml-4 space-y-1 text-sm">
+                            ${data.skills?.map(s => `<li>${s}</li>`).join('') || '<li>No skills added</li>'}
+                        </ul>
+                    </div>
+
+                    <!-- Languages -->
+                    <div class="pt-4 border-t border-gray-600">
+                        <h3 class="text-xl font-bold mb-3 text-white">LANGUAGES</h3>
+                        <div class="space-y-1">
+                            ${data.languages?.map(l => `
+                                <p><span class="font-semibold text-accent">${l.name}:</span> ${l.proficiency}</p>
+                            `).join('') || '<p>No languages added</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Hobbies -->
+                    <div class="pt-4 border-t border-gray-600">
+                        <h3 class="text-xl font-bold mb-3 text-white">HOBBIES</h3>
+                        <ul class="list-disc ml-4 space-y-1 text-sm">
+                            ${data.hobbies?.map(h => `<li>${h}</li>`).join('') || '<li>No hobbies added</li>'}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Main Column (Right) -->
+                <div class="main-column p-8 space-y-8 text-gray-800">
+
+                    <!-- Profile -->
+                    <section>
+                        <h2>PROFILE</h2>
+                        <p class="text-base leading-relaxed">${data.profile || 'Write a brief, compelling summary of your professional experience and goals here.'}</p>
+                    </section>
+
+                    <!-- Work Experience -->
+                    <section>
+                        <h2>WORK EXPERIENCE</h2>
+                        <div class="space-y-6">
+                            ${data.workExperience?.map(work => `
+                                <div>
+                                    <div class="flex justify-between items-start mb-1">
+                                        <h3 class="font-semibold text-lg">${work.title || 'Job Title'}</h3>
+                                        <p class="text-sm font-medium text-gray-500">${work.dates || 'Dates'}</p>
+                                    </div>
+                                    <p class="text-sm font-medium italic mb-2">${work.company || 'Company - Country'}</p>
+                                    <ul class="list-none ml-0 space-y-1 text-sm">
+                                        ${work.bullets?.map(bullet => `
+                                            <li class="flex items-start">
+                                                <span class="work-bullet mt-1"></span>
+                                                <span class="flex-1">${bullet}</span>
+                                            </li>
+                                        `).join('') || ''}
+                                    </ul>
+                                </div>
+                            `).join('') || '<p class="text-gray-500">Add your work experience details.</p>'}
+                        </div>
+                    </section>
+
+                    <!-- Education -->
+                    <section>
+                        <h2>EDUCATION</h2>
+                        <div class="space-y-4">
+                            ${data.education?.map(edu => `
+                                <div>
+                                    <div class="flex justify-between items-start mb-1">
+                                        <h3 class="font-semibold">${edu.degree || 'Degree'}</h3>
+                                        <p class="text-sm font-medium text-gray-500">${edu.dates || 'Dates'}</p>
+                                    </div>
+                                    <p class="text-sm italic">${edu.institution || 'University/Institution'}</p>
+                                </div>
+                            `).join('') || '<p class="text-gray-500">Add your education history.</p>'}
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+
+        // --- DYNAMIC ARRAY MUTATORS ---
+
+        window.addItem = function(type) {
+            if (!cvData[type]) cvData[type] = [];
             
-            // Generate Education
-            const eduHtml = data.education.map(edu => `
-                <div class="break-avoid">
-                    <div class="text-lg font-semibold mb-1">${edu.year}</div>
-                    <div class="font-medium text-white/90 uppercase">${edu.school}</div>
-                    <div class="text-sm font-light text-white/70 mt-1">${edu.degree}</div>
-                    ${edu.details ? `<div class="text-sm font-light text-white/70">${edu.details}</div>` : ''}
-                </div>
-            `).join('');
-
-            // Generate Experience
-            const expHtml = data.experience.map(job => `
-                <div class="relative pl-8 md:pl-12 break-inside-avoid break-avoid">
-                    <div class="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-slate-600 border-4 border-white shadow-sm"></div>
-                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-baseline mb-1">
-                        <h4 class="text-lg font-bold text-slate-800">${job.company}</h4>
-                        <span class="text-sm font-medium text-slate-500 mt-1 sm:mt-0 uppercase">${job.period}</span>
-                    </div>
-                    <div class="text-slate-500 font-medium mb-3 italic">${job.role}</div>
-                    <ul class="list-disc pl-4 text-slate-600 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                        ${job.points.map(pt => `<li>${pt}</li>`).join('')}
-                    </ul>
-                </div>
-            `).join('');
-
-            // Generate References
-            const refHtml = data.references.map(ref => `
-                <div class="break-avoid">
-                    <div class="font-bold text-lg text-slate-800">${ref.name}</div>
-                    <div class="text-slate-500 font-medium">${ref.title}</div>
-                    <div class="mt-2 text-sm text-slate-600">
-                        <p><span class="font-semibold w-12 inline-block">Phone:</span> ${ref.phone}</p>
-                        <p><span class="font-semibold w-12 inline-block">Email:</span> ${ref.email}</p>
-                    </div>
-                </div>
-            `).join('');
-
-            container.innerHTML = `
-                <!-- LEFT COLUMN (SIDEBAR) -->
-                <div class="w-full md:w-1/3 bg-[#1e2a3a] text-white p-8 md:p-10 flex flex-col gap-10 print:w-1/3 print:h-full print-column">
-                    <!-- Profile Picture -->
-                    <div class="flex justify-center mb-2">
-                        <div class="w-48 h-48 rounded-full border-[6px] border-white/20 overflow-hidden relative shadow-lg">
-                            <!-- Uses Base64 data from upload or the placeholder URL -->
-                            <img src="${data.personal.photoUrl}" onerror="this.src='${defaultPlaceholderImage}'" alt="Profile" class="w-full h-full object-cover"/>
-                        </div>
-                    </div>
-
-                    <!-- CONTACT -->
-                    <section class="break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Contact</h3>
-                        <div class="flex flex-col gap-4 text-sm font-light tracking-wide">
-                            <div class="flex items-center gap-3">
-                                <div class="bg-white/10 p-2 rounded-full"><i data-lucide="phone" class="w-4 h-4"></i></div>
-                                <span>${data.contact.phone}</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <div class="bg-white/10 p-2 rounded-full"><i data-lucide="mail" class="w-4 h-4"></i></div>
-                                <span class="break-all">${data.contact.email}</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <div class="bg-white/10 p-2 rounded-full"><i data-lucide="map-pin" class="w-4 h-4"></i></div>
-                                <span>${data.contact.address}</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <div class="bg-white/10 p-2 rounded-full"><i data-lucide="globe" class="w-4 h-4"></i></div>
-                                <span>${data.contact.website}</span>
-                            </div>
-                        </div>
-                    </section>
-
-                    <!-- EDUCATION -->
-                    <section class="break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Education</h3>
-                        <div class="flex flex-col gap-6">${eduHtml}</div>
-                    </section>
-
-                    <!-- SKILLS -->
-                    <section class="break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Skills</h3>
-                        <ul class="flex flex-col gap-3 text-sm font-light list-disc pl-4 marker:text-white/50">${skillsHtml}</ul>
-                    </section>
-
-                    <!-- LANGUAGES -->
-                    <section class="break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] border-b border-white/30 pb-3 mb-6">Languages</h3>
-                        <ul class="flex flex-col gap-3 text-sm font-light list-disc pl-4 marker:text-white/50">${langsHtml}</ul>
-                    </section>
-                </div>
-
-                <!-- RIGHT COLUMN (MAIN CONTENT) -->
-                <div class="w-full md:w-2/3 bg-white p-8 md:p-12 text-slate-800 print:w-2/3 print-column">
-                    <!-- HEADER -->
-                    <header class="mb-12 mt-4 break-avoid">
-                        <h1 class="text-5xl md:text-6xl font-bold text-slate-700 uppercase tracking-tight mb-2">
-                            ${data.personal.firstName} <span class="font-light text-slate-600">${data.personal.lastName}</span>
-                        </h1>
-                        <h2 class="text-xl tracking-[0.2em] text-slate-500 uppercase font-medium">${data.personal.title}</h2>
-                        <div class="w-24 h-1 bg-slate-700 mt-6"></div>
-                    </header>
-
-                    <!-- PROFILE -->
-                    <section class="mb-10 break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-5 border-b-2 border-slate-200 pb-2 inline-block w-full">Profile</h3>
-                        <p class="text-slate-600 leading-relaxed text-justify whitespace-pre-wrap">${data.personal.summary}</p>
-                    </section>
-
-                    <!-- WORK EXPERIENCE -->
-                    <section class="mb-10 break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-8 border-b-2 border-slate-200 pb-2 inline-block w-full">Work Experience</h3>
-                        <div class="relative border-l-2 border-slate-300 ml-3 md:ml-4 space-y-10 pb-2">
-                            ${expHtml}
-                        </div>
-                    </section>
-
-                    <!-- REFERENCES -->
-                    <section class="break-avoid">
-                        <h3 class="text-xl font-bold uppercase tracking-[0.15em] text-slate-700 mb-6 border-b-2 border-slate-200 pb-2 inline-block w-full">Reference</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">${refHtml}</div>
-                    </section>
-                </div>
-            `;
-            lucide.createIcons();
+            if (type === 'languages') {
+                cvData[type].push({ name: '', proficiency: 'Beginner' });
+            } else if (type === 'education') {
+                cvData[type].push({ degree: '', institution: '', dates: '' });
+            } else if (type === 'workExperience') {
+                cvData[type].push({ title: '', company: '', dates: '', bullets: [''] });
+            } else {
+                // skills, hobbies (simple strings)
+                cvData[type].push("");
+            }
+            debounceSave(cvData);
         }
 
-        // Helper for input fields
-        function inputField(label, value, onInput, className = "") {
-            return `
-                <div class="${className}">
-                    <label class="block text-sm font-medium text-slate-700 mb-1">${label}</label>
-                    <input type="text" value="${value}" oninput="${onInput}" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
-                </div>
-            `;
+        window.removeItem = function(type, index) {
+            cvData[type].splice(index, 1);
+            debounceSave(cvData);
         }
 
-        // --- Execute Initialization ---
-        window.onload = init;
+        // Expose to global scope for use in oninput/onclick attributes
+        window.handleArrayItemChange = handleArrayItemChange;
+        window.handleBulletChange = handleBulletChange;
+        window.addBullet = addBullet;
+        window.removeBullet = removeBullet;
+        // window.toggleView is now below
+
+        // --- MOBILE/VIEW TOGGLE ---
+        window.toggleView = function(view) {
+            const editorContainer = document.getElementById('editorFormContainer');
+            const previewContainer = document.getElementById('cvPreviewContainer');
+            const toggleButton = document.getElementById('toggleViewButton');
+
+            if (view === 'editor' || (view === 'toggle' && currentView === 'preview')) {
+                // Switch to Editor View
+                editorContainer.classList.remove('hidden');
+                previewContainer.classList.add('hidden');
+                if (toggleButton) {
+                    toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>View CV Preview`;
+                }
+                currentView = 'editor';
+            } else if (view === 'preview' || (view === 'toggle' && currentView === 'editor')) {
+                // Switch to Preview View
+                editorContainer.classList.add('hidden');
+                previewContainer.classList.remove('hidden');
+                if (toggleButton) {
+                    toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>Edit Data`;
+                }
+                currentView = 'preview';
+            }
+        }
+
+
+        // --- AUTHENTICATION AND DATA SYNC ---
+        async function initAuthAndData() {
+            try {
+                // 1. Authenticate
+                const authPromise = initialAuthToken 
+                    ? signInWithCustomToken(auth, initialAuthToken)
+                    : signInAnonymously(auth);
+
+                await authPromise;
+                userId = auth.currentUser.uid;
+                isAuthReady = true;
+
+                // 2. Set up Real-time Listener (onSnapshot)
+                const docRef = getCvDocRef(userId);
+                
+                onSnapshot(docRef, (docSnap) => {
+                    document.getElementById('loadingOverlay').classList.add('hidden');
+                    
+                    if (docSnap.exists()) {
+                        // Data retrieved from Firestore
+                        cvData = { ...defaultCV, ...docSnap.data() };
+                        console.log("Data loaded from Firestore.");
+                    } else {
+                        // No data exists, write default data and use it
+                        console.log("No data found. Saving default CV data.");
+                        cvData = defaultCV;
+                        setDoc(docRef, defaultCV).catch(err => console.error("Error setting default data:", err));
+                    }
+                    
+                    // 3. Render UI with latest data
+                    renderForm(cvData);
+                    renderCV(cvData);
+                }, (error) => {
+                    console.error("Error listening to data:", error);
+                    // Fallback to default data if listener fails
+                    cvData = defaultCV;
+                    renderForm(cvData);
+                    renderCV(cvData);
+                    document.getElementById('loadingOverlay').classList.add('hidden');
+                });
+                
+                // Add listener for all simple inputs
+                document.getElementById('cv-editor-form').addEventListener('input', handleInput);
+
+                // Initial view setup for mobile
+                if (window.innerWidth < 1024) {
+                    // Start in editor view on mobile
+                    window.toggleView('editor'); 
+                }
+
+            } catch (error) {
+                console.error("Authentication or Initialization Error:", error);
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                // Show default data if auth fails completely
+                cvData = defaultCV;
+                renderForm(cvData);
+                renderCV(cvData);
+            }
+        }
+
+        initAuthAndData();
+
     </script>
-
-    <!-- NAVIGATION BAR -->
-    <nav class="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md no-print flex justify-between items-center">
-        <h1 class="font-bold text-lg hidden md:block">Resume Builder (Local Storage & Backup)</h1>
-        <div class="flex gap-2">
-            <button onclick="switchTab('edit')" id="btn-edit" class="px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors bg-blue-600 text-white">
-                <i data-lucide="edit-3" class="w-4 h-4"></i> Edit
-            </button>
-            <button onclick="switchTab('preview')" id="btn-preview" class="px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors bg-slate-700 text-gray-300 hover:bg-slate-600">
-                <i data-lucide="eye" class="w-4 h-4"></i> Preview
-            </button>
-            <div class="w-px bg-slate-600 mx-2"></div>
-            <button onclick="printResume()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg shadow-sm transition-colors flex items-center gap-2 font-medium text-sm">
-                <i data-lucide="printer" class="w-4 h-4"></i> Print PDF
-            </button>
-        </div>
-    </nav>
-
-    <!-- MAIN CONTENT AREA -->
-    <main class="flex-1 flex justify-center p-4 md:p-8">
-        
-        <!-- EDITOR SECTION -->
-        <div id="editor-container" class="w-full max-w-3xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-8 animate-in fade-in duration-200">
-            <!-- Content injected by JS -->
-        </div>
-
-        <!-- PREVIEW SECTION (Hidden by default) -->
-        <div id="preview-container" class="hidden w-full max-w-[1000px] bg-white shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-200 min-h-[297mm] md:h-full">
-            <!-- Content injected by JS -->
-        </div>
-
-    </main>
-
-    <!-- MESSAGE BOX (for status updates) -->
-    <div id="message-box" class="fixed bottom-4 right-4 p-4 rounded-lg shadow-lg hidden text-sm font-medium transition-all duration-300 z-[100]">
-        Status Message
-    </div>
+    <script>
+        // Use a simple retry mechanism for the fetch call.
+        async function fetchWithRetry(url, options, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+    </script>
 </body>
 </html>
